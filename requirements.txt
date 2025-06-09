@@ -1,0 +1,6 @@
+langchain
+langchain_community
+elasticsearch
+openai
+pydantic
+python-dotenv
