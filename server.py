@@ -26,10 +26,19 @@ llm = ChatOpenAI(openai_api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turb
 def es_ping(_):
     return es.ping()
 
+def es_doc_count(_):
+    return es.count(index=os.getenv("ELASTIC_INDEX"))["count"]
+
 es_status_tool = Tool(
     name="es_status",
     func=es_ping,
     description="Check if Elasticsearch is connected."
+)
+
+es_doc_count_tool = Tool(
+    name="es_doc_count",
+    func=es_doc_count,
+    description="Get the number of documents in the main Elasticsearch index."
 )
 
 class RAGSearchInput(BaseModel):
@@ -57,14 +66,14 @@ rag_search_tool = StructuredTool.from_function(
 
 memory = ConversationBufferMemory(memory_key="chat_history")
 agent = initialize_agent(
-    [es_status_tool, rag_search_tool],
+    [es_status_tool, rag_search_tool, es_doc_count_tool],
     llm,
     agent=AgentType.OPENAI_FUNCTIONS,
     memory=memory,
     verbose=True,
     system_prompt=(
         "You are an assistant with access to tools for searching a knowledge base and checking Elasticsearch status. "
-        "Use the tools as needed. For RAG_Search, provide 'query' and optionally 'dates' in the input."
+        "You can also provide the number of documents in the main index using the es_doc_count tool."
     )
 )
 
