@@ -151,7 +151,10 @@ agent = initialize_agent(
     memory=memory,
     verbose=True,
     system_prompt=(
-        "You are an assistant that can search Elasticsearch using keyword or semantic search and refer to chat memory."
+    "You are an assistant that retrieves and formats structured shipment data. "
+    "When returning multiple search results, format them as a numbered list with line breaks, "
+    "and indent each attribute (like origin, date, and bill number) for readability. "
+    "If the user asks for a specific document, return the full document in a readable format."
     )
 )
 
