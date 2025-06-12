@@ -41,7 +41,14 @@ def es_ping(_):
 
 def es_doc_count(_):
     try:
-        return es.count(index=os.getenv("ELASTIC_INDEX"))["count"]
+        index = os.getenv("ELASTIC_INDEX")
+        if not index:
+            return "Error: ELASTIC_INDEX not set in environment."
+        if not es.indices.exists(index=index):
+            return f"Error: Index '{index}' does not exist."
+
+        count_response = es.count(index="global-2025", body={"query": {"match_all": {}}})
+        return f"Index '{index}' contains {count_response['count']} documents."
     except Exception as e:
         return f"Error fetching document count: {str(e)}"
 
@@ -67,18 +74,39 @@ def rag_search(input: RAGSearchInput):
                 "multi_match": {
                     "query": input.query,
                     "fields": [
-                        "productDesc^3", "productDescriptionNative", "shipperCity", "consigneeCity",
-                        "consigneeCountry", "shipperCountry", "type", "billLadingNo", "hSCode",
-                        "date", "notifyPartyName"
+                        "productDesc^3",
+                        "productDescriptionNative^2",
+                        "notifyPartyName",
+                        "shipperCity",
+                        "shipperCountry",
+                        "consigneeCountry",
+                        "billLadingNo",
+                        "type",
+                        "currency",
+                        "hSCode"
                     ],
                     "fuzziness": "AUTO"
                 }
             },
             "size": 5
         }
-        res = es.search(index=os.getenv("ELASTIC_INDEX"), body=body)
+
+        res = es.search(index="global-2025", body=body)
         docs = [hit["_source"] for hit in res["hits"]["hits"]]
-        return "\n\n".join([doc.get("productDesc", str(doc)) for doc in docs]) if docs else "No relevant documents found."
+
+        if not docs:
+            return "No relevant documents found."
+
+        summaries = []
+        for doc in docs:
+            summaries.append(
+                f"- {doc.get('productDesc', 'N/A')} | From {doc.get('shipperCity', 'N/A')} "
+                f"to {doc.get('consigneeCountry', 'N/A')} on {doc.get('date', 'N/A')} | "
+                f"Type: {doc.get('type', 'N/A')} | BL#: {doc.get('billLadingNo', 'N/A')}"
+            )
+
+        return "\n".join(summaries)
+
     except Exception as e:
         return f"Search error: {str(e)}"
 
