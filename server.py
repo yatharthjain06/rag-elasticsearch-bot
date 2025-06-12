@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -25,7 +26,7 @@ memory = ConversationBufferMemory(memory_key="chat_history")
 # LLM
 llm = ChatOpenAI(openai_api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turbo")
 
-# Tools
+# ===== Tools =====
 def es_ping(_):
     try:
         return es.ping()
@@ -88,7 +89,6 @@ def rag_search(input: RAGSearchInput):
     except Exception as e:
         return f"Search error: {str(e)}"
 
-# Register tools
 es_status_tool = Tool(name="es_status", func=es_ping, description="Check if Elasticsearch is connected.")
 es_doc_count_tool = Tool(name="es_doc_count", func=es_doc_count, description="Get number of documents.")
 last_user_message_tool = Tool(name="last_user_message", func=last_user_message, description="Returns the user's last message.")
@@ -98,7 +98,7 @@ rag_search_tool = StructuredTool.from_function(
     description="Search the knowledge base for relevant documents. Input: query (str), dates (optional str)."
 )
 
-# Agent setup
+# ===== Agent =====
 agent = initialize_agent(
     [es_status_tool, rag_search_tool, es_doc_count_tool, last_user_message_tool, get_user_message_tool],
     llm,
@@ -111,7 +111,20 @@ agent = initialize_agent(
     )
 )
 
-# FastAPI app
+# ===== Context Resolver =====
+def resolve_context(input_text: str, memory_text: str) -> str:
+    vague_patterns = [
+        r'\b(and|what about|the next one|the second|he|she|it|they|them|that|those|this|yes|no|sure|okay)\b',
+        r'^\s*(and|then|next|also|too|yes|no|ok|sure)\b',
+    ]
+    if any(re.search(pattern, input_text.lower()) for pattern in vague_patterns):
+        lines = memory_text.strip().split('\n')
+        recent = lines[-4:]  # 2 user + 2 assistant
+        context = '\n'.join(recent)
+        return f"{context}\nUser: {input_text}"
+    return input_text
+
+# ===== FastAPI App =====
 app = FastAPI()
 
 @app.get("/", response_class=HTMLResponse)
@@ -190,20 +203,22 @@ def root():
     </html>
     """
 
-# Chat endpoint
+# POST endpoint
 class QueryRequest(BaseModel):
     user_input: str
 
 @app.post("/chat")
 async def chat_endpoint(request: QueryRequest):
     try:
-        result = agent.invoke({"input": request.user_input})
+        user_input = resolve_context(request.user_input, memory.buffer)
+        result = agent.invoke({"input": user_input})
         response = result["output"] if isinstance(result, dict) else str(result)
-        print("Memory Buffer:", memory.buffer)
+        print("Memory Buffer:\n", memory.buffer)
     except Exception as e:
         response = f"An error occurred: {str(e)}"
     return {"response": response}
 
+# Health check
 @app.get("/healthz")
 def health_check():
     return {"status": "ok"}
