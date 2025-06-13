@@ -66,6 +66,7 @@ def last_user_message(_):
 class RAGSearchInput(BaseModel):
     query: str
     dates: str = None
+    size: int = 10
 
 def rag_search(input: RAGSearchInput):
     try:
@@ -76,6 +77,7 @@ def rag_search(input: RAGSearchInput):
                     "fields": [
                         "productDesc^3",
                         "productDescriptionNative^2",
+                        "hSDescription^2",
                         "notifyPartyName",
                         "shipperCity",
                         "shipperCountry",
@@ -83,12 +85,19 @@ def rag_search(input: RAGSearchInput):
                         "billLadingNo",
                         "type",
                         "currency",
-                        "hSCode"
+                        "hSCode",
+                        "countryName",
+                        "customs",
+                        "container",
+                        "itemNo",
+                        "exporterCountry",
+                        "importerCountry",
+                        "tradingCountry"
                     ],
                     "fuzziness": "AUTO"
                 }
             },
-            "size": 5
+            "size": getattr(input, 'size', 10)
         }
 
         res = es.search(index=os.getenv("ELASTIC_INDEX"), body=body)
@@ -98,14 +107,17 @@ def rag_search(input: RAGSearchInput):
             return "No relevant documents found."
 
         summaries = []
-        for doc in docs:
+        for idx, doc in enumerate(docs, 1):
             summaries.append(
-                f"- {doc.get('productDesc', 'N/A')} | From {doc.get('shipperCity', 'N/A')} "
+                f"{idx}. {doc.get('productDesc', 'N/A')} | From {doc.get('shipperCity', 'N/A')} "
                 f"to {doc.get('consigneeCountry', 'N/A')} on {doc.get('date', 'N/A')} | "
                 f"Type: {doc.get('type', 'N/A')} | BL#: {doc.get('billLadingNo', 'N/A')}"
             )
 
-        return "\n".join(summaries)
+        result_str = f"Here are {len(summaries)} documents related to '{input.query}':\n" + "\n".join(summaries)
+        if len(summaries) == getattr(input, 'size', 10):
+            result_str += "\nWould you like to see more documents or do you need specific information from any of these documents?"
+        return result_str
 
     except Exception as e:
         return f"Search error: {str(e)}"
