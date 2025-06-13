@@ -47,7 +47,7 @@ def es_doc_count(_):
         if not es.indices.exists(index=index):
             return f"Error: Index '{index}' does not exist."
 
-        count_response = es.count(index="global-2025", body={"query": {"match_all": {}}})
+        count_response = es.count(index=os.getenv("ELASTIC_INDEX"), body={"query": {"match_all": {}}})
         return f"Index '{index}' contains {count_response['count']} documents."
     except Exception as e:
         return f"Error fetching document count: {str(e)}"
@@ -91,7 +91,7 @@ def rag_search(input: RAGSearchInput):
             "size": 5
         }
 
-        res = es.search(index="global-2025", body=body)
+        res = es.search(index=os.getenv("ELASTIC_INDEX"), body=body)
         docs = [hit["_source"] for hit in res["hits"]["hits"]]
 
         if not docs:
