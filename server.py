@@ -97,7 +97,7 @@ def rag_search(input: RAGSearchInput):
                     "tie_breaker": 0.3           # Helps with scoring when multiple fields match
                 }
             },
-            "size": getattr(input, 'size', 10),
+            "size": 10000,
             "sort": [
                 {"_score": {"order": "desc"}},   # Sort by relevance first
                 {"date": {"order": "desc"}}      # Then by date
@@ -105,7 +105,8 @@ def rag_search(input: RAGSearchInput):
         }
 
         res = es.search(index=os.getenv("ELASTIC_INDEX"), body=body)
-        docs = [hit["_source"] for hit in res["hits"]["hits"]]
+        max_results = 20  # or any reasonable number
+        docs = [hit["_source"] for hit in res["hits"]["hits"][:max_results]]
 
         if not docs:
             return "No relevant documents found."
@@ -170,7 +171,7 @@ def semantic_search(input: SemanticSearchInput):
             embedding=embeddings,
             es_url=f"https://{os.getenv('ELASTIC_USERNAME')}:{os.getenv('ELASTIC_PASSWORD')}@{os.getenv('ELASTIC_HOST')}:{os.getenv('ELASTIC_PORT')}"
         )
-        results = store.similarity_search(input.query, k=5)
+        results = store.similarity_search(input.query, k=20)
         return "\n\n".join([doc.page_content for doc in results]) if results else "No matching content found in semantic index."
     except Exception as e:
         return f"Semantic search error: {str(e)}"
