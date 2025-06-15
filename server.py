@@ -75,29 +75,33 @@ def rag_search(input: RAGSearchInput):
                 "multi_match": {
                     "query": input.query,
                     "fields": [
-                        "productDesc^3",
-                        "productDescriptionNative^2",
-                        "hSDescription^2",
-                        "notifyPartyName",
-                        "shipperCity",
-                        "shipperCountry",
-                        "consigneeCountry",
-                        "billLadingNo",
-                        "type",
-                        "currency",
-                        "hSCode",
-                        "countryName",
-                        "customs",
-                        "container",
-                        "itemNo",
-                        "exporterCountry",
-                        "importerCountry",
-                        "tradingCountry"
+                        "productDesc^3",           # Main product description (highest boost)
+                        "hSDescription^2",         # HS code description (high boost)
+                        "hSCode^2",               # HS code (high boost)
+                        "countryName",            # Country name (Nigeria in your data)
+                        "tradingCountry",         # Trading country (UK in your data)
+                        "exporterCountry",        # Exporter country
+                        "importerCountry",        # Importer country
+                        "exporterCity",           # Exporter city
+                        "importerCity",           # Importer city
+                        "exporterState",          # Exporter state
+                        "importerState",          # Importer state
+                        "customs",                # Customs office
+                        "container",              # Container info
+                        "itemNo",                 # Item number
+                        "registryNew",            # Registry number (similar to BL number)
+                        "receiptNumber"           # Receipt number
                     ],
-                    "fuzziness": "AUTO"
+                    "fuzziness": "AUTO",
+                    "type": "best_fields",        # Better for matching across multiple fields
+                    "tie_breaker": 0.3           # Helps with scoring when multiple fields match
                 }
             },
-            "size": getattr(input, 'size', 10)
+            "size": getattr(input, 'size', 10),
+            "sort": [
+                {"_score": {"order": "desc"}},   # Sort by relevance first
+                {"date": {"order": "desc"}}      # Then by date
+            ]
         }
 
         res = es.search(index=os.getenv("ELASTIC_INDEX"), body=body)
@@ -108,15 +112,48 @@ def rag_search(input: RAGSearchInput):
 
         summaries = []
         for idx, doc in enumerate(docs, 1):
-            summaries.append(
-                f"{idx}. {doc.get('productDesc', 'N/A')} | From {doc.get('shipperCity', 'N/A')} "
-                f"to {doc.get('consigneeCountry', 'N/A')} on {doc.get('date', 'N/A')} | "
-                f"Type: {doc.get('type', 'N/A')} | BL#: {doc.get('billLadingNo', 'N/A')}"
-            )
+            # Create more accurate summaries based on actual data structure
+            product = doc.get('productDesc', 'N/A')
+            trading_country = doc.get('tradingCountry', 'N/A')
+            country = doc.get('countryName', 'N/A')
+            date = doc.get('date', 'N/A')
+            if date != 'N/A' and 'T' in date:
+                date = date.split('T')[0]  # Extract just the date part
+            
+            hs_code = doc.get('hSCode', 'N/A')
+            customs = doc.get('customs', 'N/A')
+            registry = doc.get('registryNew', 'N/A')
+            fob_value = doc.get('fOBValueUSD', 'N/A')
+            quantity = doc.get('quantity', 'N/A')
+            unit = doc.get('unit', 'N/A')
+            
+            summary = f"{idx}. {product}"
+            
+            # Add trade flow information
+            if trading_country != 'N/A' and country != 'N/A':
+                summary += f" | Trade: {trading_country} → {country}"
+            
+            # Add date
+            if date != 'N/A':
+                summary += f" | Date: {date}"
+            
+            # Add value and quantity
+            if fob_value != 'N/A' and quantity != 'N/A' and unit != 'N/A':
+                summary += f" | Value: ${fob_value:,.2f} USD | Qty: {quantity} {unit}"
+            
+            # Add HS code and registry
+            if hs_code != 'N/A':
+                summary += f" | HS: {hs_code}"
+            if registry != 'N/A':
+                summary += f" | Reg: {registry}"
+                
+            summaries.append(summary)
 
-        result_str = f"Here are {len(summaries)} documents related to '{input.query}':\n" + "\n".join(summaries)
+        result_str = f"Found {len(summaries)} documents related to '{input.query}':\n\n" + "\n".join(summaries)
+        
         if len(summaries) == getattr(input, 'size', 10):
-            result_str += "\nWould you like to see more documents or do you need specific information from any of these documents?"
+            result_str += f"\n\nShowing top {len(summaries)} results. Would you like to see more documents or need specific information from any of these?"
+        
         return result_str
 
     except Exception as e:
